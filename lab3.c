@@ -10,26 +10,22 @@
 #define CMD_EXIT    "exit"
 #define CMDBUF_LEN  4
 
-#define VEHICLE_N 10
+#define MAX_LEN 15
 
-#define CMD_DELAY 1
+#define CHAR_EQ '-'
+
+#define CMD_DELAY 3
 
 #define arr_len(_arr) (sizeof(_arr) / sizeof((_arr)[0]))
 
 bool listening = true;
-char choice_buf[3]  = "\0"; //2-digit dec number + terminator
 
-struct veh {
-	char vehicle_name;
-	int speed;
-};
-
+char choice_buf[2]  = "\0"; //2-digit dec number + terminator
+char current_word[MAX_LEN];
 struct game_state {
-	int current_round;
-	float player_time;
-	float pc_time;
-	struct veh vehicle[VEHICLE_N];
-	bool used_vehicle[VEHICLE_N];
+	char chosen_word[MAX_LEN];
+	char current_word[MAX_LEN];
+	char current_char;
 };
 
 static struct game_state g_st;
@@ -47,55 +43,27 @@ static
 void
 gen_game_values(void)
 {
-	g_st.current_round = 1;
-	g_st.player_time = 0;
-	g_st.pc_time = 0;
-	for(int i = 0; i<VEHICLE_N; i++) {
-		int vehicle_type = rand() % 4;
-		switch(vehicle_type) {
-		case 0:
-			g_st.vehicle[i].speed = rand() % 51 + 90;
-			g_st.vehicle[i].vehicle_name = 's';
-			break;
-		case 1:
-			g_st.vehicle[i].speed = rand() % 21 + 70;
-			g_st.vehicle[i].vehicle_name = 'm';
-			break;
-		case 2:
-			g_st.vehicle[i].speed = rand() % 31 + 50;
-			g_st.vehicle[i].vehicle_name = 'r';
-			break;
-		case 3:
-			g_st.vehicle[i].speed = rand() % 31 + 10;
-			g_st.vehicle[i].vehicle_name = 'b';
-			break;
-		}
-		g_st.used_vehicle[i] = false;
+	char bag_of_words[3][MAX_LEN] = {"first", "abrakadabra", "difficult"};
+	strcpy(g_st.chosen_word, gets(bag_of_words[rand() % 2 + 0]));
+	UART0_write_line(g_st.chosen_word);
+	for (int i = 0; i<arr_len(g_st.chosen_word);i++){
+		g_st.current_word[i] = CHAR_EQ;
 	}
-}
-
-static
-int
-get_pc_choice()
-{
-	for(int i = 0; i<VEHICLE_N; i++) {
-		if(!g_st.used_vehicle[i]) {
-			g_st.used_vehicle[i] = true;
-			return i;
-		}
-	}
-	return -1;
-}
-
-static
-void
-calc_time(int player_choice, int pc_choice)
-{
-	g_st.player_time = (float) 10 / (float) g_st.vehicle[player_choice].speed;
-	g_st.pc_time = (float) 10 / (float) g_st.vehicle[pc_choice].speed;
+	UART0_write_line(g_st.chosen_word);
+	UART0_write_line(g_st.current_word);
 }
 
 volatile static bool uart_int_happened = false;
+
+void
+string_compare(struct game_state g_st){
+	strcpy(current_word, g_st.current_word);
+	for (int i=0; i<sizeof(g_st.chosen_word); i++){
+			if (g_st.chosen_word[i]==g_st.current_char){
+				current_word[i] = g_st.current_char;
+		}
+	};
+}
 
 void
 uart_int(void) __irq
@@ -125,15 +93,7 @@ handle_game(void)
 		goto cleanup;
 	} else if (!memcmp(cmd_buf, CMD_PLAY, CMDBUF_LEN)) {
 		gen_game_values();
-		UART0_write_line("-> Finish 50 km in 5 rounds as fast as possible\n");
-		UART0_write_line_fmt("-> Round %d", g_st.current_round);
-		UART0_write_line("s - sportcar, m - motorcycle, r - rodster, b - bicycle");
-		UART0_write_line("-> Pick the number of a vehicle:");
-		for(int i = 0; i<VEHICLE_N; i++) {
-			if(g_st.used_vehicle[i])
-				continue;
-			UART0_write_line_fmt("-> %d %c: %d kmph", i, g_st.vehicle[i].vehicle_name, g_st.vehicle[i].speed);
-		}
+		UART0_write_line("-> Guess the word as fast as possible\n");
 		cmd_not_choice = false;
 		goto cleanup;
 	} else {
@@ -148,44 +108,30 @@ cleanup:
 
 repeat_choice:	
 	if (UART0_read_line(choice_buf, arr_len(choice_buf))) {
-		UART0_write_line("-> unable to read choice, try again\n");
+		UART0_write_line("-> unable to read char, try again\n");
 		goto repeat_choice;
 	}
 
-	int choice = (int)strtol(choice_buf, NULL, 16);
-	if(!g_st.used_vehicle[choice]) {
-		g_st.used_vehicle[choice] = true;
+	if(choice_buf[0]!=' ') {
+		g_st.current_char = choice_buf[0];
 	} else {
-		UART0_write_line("-> Wrong number, choose another one\n");
+		UART0_write_line("-> Wrong char, choose another one\n");
 		goto repeat_choice;
 	}
 
-	int pc_choice = get_pc_choice();
-	assert(pc_choice != -1);
-
-	UART0_write_line_fmt("-> I pick %d", pc_choice);
-	UART0_write_line("-> the race is starting...");
+	UART0_write_line_fmt("-> You choose char %c", g_st.current_char);
 	delay(CMD_DELAY);
 
-	calc_time(choice, pc_choice);
-
-	int covered_distance = g_st.current_round * 10;
-	UART0_write_line_fmt("-> You covered %d in %f hours", covered_distance, g_st.player_time);
-	UART0_write_line_fmt("-> I covered %d in %f hours", covered_distance, g_st.pc_time);
-
-	if (g_st.current_round != 5) {
-		g_st.current_round++;
-		goto repeat_choice;
+	string_compare(g_st);
+	strcpy(g_st.current_word, current_word);
+	
+	if (strcmp(g_st.current_word, g_st.chosen_word)==0) {
+		UART0_write_line_fmt("-> The word is %s", g_st.chosen_word);
+		cmd_not_choice = true;
 	} else {
-		UART0_write_line_fmt("-> Score: You/Me %f/%f", g_st.player_time, g_st.pc_time);
-		if(g_st.player_time < g_st.pc_time) {
-			UART0_write_line("You won!");
-		} else {
-			UART0_write_line("You lost.");
-			UART0_int_enable();
-		}
+		UART0_write_line_fmt("-> The word you guessed is %s", g_st.current_word);
+		goto repeat_choice;
 	}
-	cmd_not_choice = true;
 }
 
 int
