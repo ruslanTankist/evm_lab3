@@ -12,6 +12,6 @@
 Частота передачи по UART0: 4800 бод.
 Пауза между выводом сообщений: 4 секунды.
 # Вывод
-![imgur](https://imgur.com/FWdmSkF)
-![imgur](https://imgur.com/QW5KZVp)
+![imgur](https://i.imgur.com/FWdmSkF.png)
+![imgur](https://i.imgur.com/QW5KZVp.png)
 
